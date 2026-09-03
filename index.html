@@ -1146,8 +1146,10 @@ function renderControlGroup(catId, taskIdx, riesgoIdx, riesgo){
     { estado:'cumple', label:'Cumple' },
     { estado:'no_cumple', label:'No cumple' },
   ];
+  const task = cat && cat.tasks ? cat.tasks[taskIdx] : null;
   const payload = {
     catId, catLabel: cat ? cat.label : '', taskIdx,
+    tarea: task ? task.tarea : '',
     riesgoIdx, riesgo: riesgo.riesgo || '',
     factorIdx: null, factor: null,
   };

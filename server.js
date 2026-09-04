@@ -222,7 +222,46 @@ app.get('/controles/export.csv', requireAuth, async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+// Devuelve estadísticas agregadas de cumplimiento, para el dashboard general.
+app.get('/controles/dashboard', requireAuth, async (req, res) => {
+  try {
+    const totales = await pool.query(
+      `SELECT estado, COUNT(*)::int AS total
+       FROM controles_log
+       GROUP BY estado`
+    );
+    const porCategoria = await pool.query(
+      `SELECT cat_label,
+              COUNT(*) FILTER (WHERE estado = 'cumple')::int AS cumple,
+              COUNT(*) FILTER (WHERE estado = 'no_cumple')::int AS no_cumple,
+              COUNT(*) FILTER (WHERE estado = 'no_aplica')::int AS no_aplica,
+              COUNT(*)::int AS total
+       FROM controles_log
+       GROUP BY cat_label
+       ORDER BY total DESC`
+    );
+    const porUsuario = await pool.query(
+      `SELECT username,
+              COUNT(*) FILTER (WHERE estado = 'cumple')::int AS cumple,
+              COUNT(*) FILTER (WHERE estado = 'no_cumple')::int AS no_cumple,
+              COUNT(*)::int AS total,
+              MAX(checked_at) AS ultima_marca
+       FROM controles_log
+       GROUP BY username
+       ORDER BY total DESC`
+    );
+    return res.json({
+      totales: totales.rows,
+      porCategoria: porCategoria.rows,
+      porUsuario: porUsuario.rows,
+    });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'Error del servidor al calcular el dashboard.' });
+  }
+});
+
+const PORT = process.env.PORT || 3000;const PORT = process.env.PORT || 3000;
 initSchema()
   .then(() => {
     app.listen(PORT, () => {

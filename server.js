@@ -189,6 +189,18 @@ app.get('/controles/tarea', requireAuth, async (req, res) => {
   }
 });
 
+// Formatea una fecha en hora de Chile (America/Santiago), para que el CSV de
+// auditoría y cualquier lectura manual sean legibles sin tener que restar
+// horas mentalmente desde UTC.
+function toChileString(date) {
+  return new Intl.DateTimeFormat('es-CL', {
+    timeZone: 'America/Santiago',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  }).format(date).replace(',', '');
+}
+
 // Exporta todo el historial como CSV, para trazabilidad / auditoría.
 app.get('/controles/export.csv', requireAuth, async (req, res) => {
   try {
@@ -197,9 +209,9 @@ app.get('/controles/export.csv', requireAuth, async (req, res) => {
        FROM controles_log
        ORDER BY checked_at DESC`
     );
-    const header = 'usuario,categoria,tarea,riesgo,factor,estado,fecha\n';
+    const header = 'usuario,categoria,tarea,riesgo,factor,estado,fecha_chile\n';
     const rows = result.rows.map(r => [
-      r.username, r.cat_label, r.tarea, r.riesgo, r.factor || '', r.estado, r.checked_at.toISOString(),
+      r.username, r.cat_label, r.tarea, r.riesgo, r.factor || '', r.estado, toChileString(r.checked_at),
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="miper_controles.csv"');

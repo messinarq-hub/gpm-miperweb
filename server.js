@@ -161,8 +161,11 @@ app.post('/controles', requireAuth, async (req, res) => {
   }
 });
 
-// Devuelve el último estado registrado de cada control (riesgo+factor) para una tarea,
-// para poder pre-marcar las casillas al abrir la tarea.
+// Devuelve el estado registrado HOY (hora de Chile) de cada control (riesgo+factor)
+// para una tarea, para poder pre-marcar las casillas al abrir la tarea.
+// El historial completo (de todos los días) queda guardado en controles_log de todas
+// formas — esto solo filtra qué se muestra ya marcado en el formulario, para que cada
+// jornada empiece "en blanco" sin perder ningún registro anterior.
 app.get('/controles/tarea', requireAuth, async (req, res) => {
   try {
     const catId = req.query.catId;
@@ -175,6 +178,7 @@ app.get('/controles/tarea', requireAuth, async (req, res) => {
          riesgo_idx, factor_idx, estado, username, checked_at
        FROM controles_log
        WHERE cat_id = $1 AND task_idx = $2
+         AND checked_at >= (date_trunc('day', now() AT TIME ZONE 'America/Santiago') AT TIME ZONE 'America/Santiago')
        ORDER BY riesgo_idx, checked_at DESC`,
       [catId, taskIdx]
     );

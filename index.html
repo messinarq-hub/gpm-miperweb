@@ -454,6 +454,52 @@
   .legend-item{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-dim);}
   .legend-dot{width:9px;height:9px;border-radius:50%;}
 
+  .dash-topbtn{
+  display:inline-flex; align-items:center; gap:6px;
+  background:var(--bg-raised); border:1px solid var(--line);
+  border-radius:20px; padding:6px 12px; cursor:pointer;
+  font-size:12px; color:var(--ink-dim); font-family:var(--font-mono);
+}
+.dash-topbtn:active{background:var(--bg-card);}
+.dash-icon{display:inline-flex; align-items:flex-end; gap:2px; height:11px;}
+.dash-icon i{display:block; width:3px; background:var(--ink-dim); border-radius:1px;}
+.dash-icon i:nth-child(1){height:5px;}
+.dash-icon i:nth-child(2){height:9px;}
+.dash-icon i:nth-child(3){height:11px;}
+.kpi-row{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:18px;}
+.kpi-card{
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:12px;
+  padding:14px 16px; box-shadow:var(--shadow);
+}
+.kpi-value{font-family:var(--font-display); font-weight:800; font-size:26px; line-height:1;}
+.kpi-label{font-family:var(--font-mono); font-size:11px; color:var(--ink-faint); margin-top:6px;}
+.dash-section-title{
+  font-family:var(--font-mono); font-size:12px; color:var(--ink-faint);
+  margin:24px 0 12px; display:flex; align-items:center; gap:8px;
+}
+.dash-section-title::after{content:''; flex:1; height:1px; background:var(--line);}
+.stat-row{
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px; margin-bottom:8px; box-shadow:var(--shadow);
+}
+.stat-row-top{display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;}
+.stat-row-title{font-weight:600; font-size:14px;}
+.stat-row-total{font-family:var(--font-mono); font-size:11px; color:var(--ink-faint);}
+.stat-bar-track{display:flex; height:8px; border-radius:5px; overflow:hidden; background:var(--line);}
+.stat-bar-seg.cumple{background:var(--risk-tolerable);}
+.stat-bar-seg.no_cumple{background:var(--risk-intolerable);}
+.stat-bar-seg.no_aplica{background:var(--ink-faint);}
+.stat-legend{display:flex; gap:12px; font-size:11px; color:var(--ink-faint);}
+.stat-legend span{display:flex; align-items:center; gap:4px;}
+.stat-legend i{width:7px;height:7px;border-radius:50%;display:inline-block;}
+.user-row{
+  display:flex; justify-content:space-between; align-items:center;
+  background:var(--bg-raised); border:1px solid var(--line); border-radius:10px;
+  padding:10px 14px; margin-bottom:8px; font-size:13px;
+}
+.user-row-name{font-weight:600;}
+.user-row-meta{font-family:var(--font-mono); font-size:11px; color:var(--ink-faint); margin-top:2px;}
+  
   a, a:visited{color:inherit;}
 
   /* LOGIN */
@@ -702,7 +748,13 @@ function userBarHTML(){
   return `
     <div class="user-bar">
       <span>Sesión: <b>${esc(AUTH.username || '')}</b></span>
-      <span class="logout-link" onclick="doLogout()">Cerrar sesión</span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span class="dash-topbtn" onclick="go('#/dashboard')">
+          <span class="dash-icon"><i></i><i></i><i></i></span>
+          Dashboard
+        </span>
+        <span class="logout-link" onclick="doLogout()">Cerrar sesión</span>
+      </div>
     </div>
   `;
 }
@@ -755,7 +807,8 @@ function parseHash(){
   const parts = h.split('/').filter(Boolean);
   if(parts.length === 0) return {view:'home'};
   if(parts[0] === 'cat' && parts[1]) return {view:'cat', catId: decodeURIComponent(parts[1])};
-  if(parts[0] === 'task' && parts[1] && parts[2] !== undefined) return {view:'task', catId: decodeURIComponent(parts[1]), taskIdx: parseInt(parts[2],10)};
+   if(parts[0] === 'task' && parts[1] && parts[2] !== undefined) return {view:'task', catId: decodeURIComponent(parts[1]), taskIdx: parseInt(parts[2],10)};
+  if(parts[0] === 'dashboard') return {view:'dashboard'};
   return {view:'home'};
 }
 function go(hash){ location.hash = hash; }
@@ -788,8 +841,98 @@ function render(){
   const app = document.getElementById('app');
   if(route.view === 'home') return renderHome(app);
   if(route.view === 'cat') return renderCat(app, route.catId);
-  if(route.view === 'task') return renderTask(app, route.catId, route.taskIdx);
+    if(route.view === 'task') return renderTask(app, route.catId, route.taskIdx);
+  if(route.view === 'dashboard') return renderDashboard(app);
   renderHome(app);
+}
+
+async function renderDashboard(app){
+  window.scrollTo(0,0);
+  app.innerHTML = `
+    <div class="stripe"></div>
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="back-btn" onclick="go('#/')">‹</div>
+        <div class="topbar-titles">
+          <div class="topbar-eyebrow">MIPER · NAVE 4/4</div>
+          <div class="topbar-title">Dashboard de controles</div>
+        </div>
+      </div>
+    </header>
+    <main id="dashBody">
+      <div class="empty-state">Cargando estadísticas…</div>
+    </main>
+  `;
+  const body = document.getElementById('dashBody');
+  let data;
+  try {
+    data = await apiFetch('/controles/dashboard');
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">No se pudo cargar el dashboard.<br>${esc(e.message || '')}</div>`;
+    return;
+  }
+  const totalesMap = {};
+  (data.totales || []).forEach(t => { totalesMap[t.estado] = t.total; });
+  const cumple = totalesMap.cumple || 0;
+  const noCumple = totalesMap.no_cumple || 0;
+  const noAplica = totalesMap.no_aplica || 0;
+  const total = cumple + noCumple + noAplica;
+  const pctCumple = total ? Math.round((cumple / total) * 100) : 0;
+
+  const catRows = (data.porCategoria || []).map(c => {
+    const t = c.total || 1;
+    const pc = (c.cumple / t * 100).toFixed(1);
+    const pn = (c.no_cumple / t * 100).toFixed(1);
+    const pa = (c.no_aplica / t * 100).toFixed(1);
+    return `
+      <div class="stat-row">
+        <div class="stat-row-top">
+          <div class="stat-row-title">${esc(c.cat_label)}</div>
+          <div class="stat-row-total">${c.total} marcas</div>
+        </div>
+        <div class="stat-bar-track">
+          <div class="stat-bar-seg cumple" style="width:${pc}%"></div>
+          <div class="stat-bar-seg no_cumple" style="width:${pn}%"></div>
+          <div class="stat-bar-seg no_aplica" style="width:${pa}%"></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  const userRows = (data.porUsuario || []).map(u => {
+    const when = u.ultima_marca ? new Date(u.ultima_marca).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+    return `
+      <div class="user-row">
+        <div>
+          <div class="user-row-name">${esc(u.username)}</div>
+          <div class="user-row-meta">Última marca: ${when}</div>
+        </div>
+        <div class="user-row-meta">${u.cumple} cumple · ${u.no_cumple} no cumple · ${u.total} total</div>
+      </div>
+    `;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="kpi-row">
+      <div class="kpi-card">
+        <div class="kpi-value">${total}</div>
+        <div class="kpi-label">CONTROLES MARCADOS</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-value" style="color:var(--risk-tolerable)">${pctCumple}%</div>
+        <div class="kpi-label">% CUMPLE</div>
+      </div>
+    </div>
+    <div class="stat-legend" style="margin-bottom:6px;">
+      <span><i style="background:var(--risk-tolerable)"></i>Cumple</span>
+      <span><i style="background:var(--risk-intolerable)"></i>No cumple</span>
+      <span><i style="background:var(--ink-faint)"></i>No aplica</span>
+    </div>
+    <div class="dash-section-title">POR CATEGORÍA</div>
+    ${catRows || '<div class="empty-state">Todavía no hay controles marcados.</div>'}
+    <div class="dash-section-title">POR INSPECTOR</div>
+    ${userRows || '<div class="empty-state">Todavía no hay controles marcados.</div>'}
+  `;
 }
 
 function countRisks(cat){

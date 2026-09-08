@@ -285,3 +285,15 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
     return res.status(500).json({ error: 'Error del servidor al calcular el dashboard.' });
   }
 });
+
+const PORT = process.env.PORT || 3000;
+initSchema()
+  .then(() => {
+    app.listen(PORT, () => {
+      console.log(`miper-server escuchando en puerto ${PORT}`);
+    });
+  })
+  .catch(err => {
+    console.error('No se pudo preparar la base de datos:', err);
+    process.exit(1);
+  });

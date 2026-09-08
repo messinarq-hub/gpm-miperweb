@@ -846,6 +846,29 @@ function render(){
   renderHome(app);
 }
 
+const DASH_RANGE_LABELS = { today: 'Hoy', '7d': 'Últimos 7 días', all: 'Todo el historial' };
+
+function buildDonutSVG(cumple, noCumple, noAplica){
+  const total = cumple + noCumple + noAplica;
+  const C = 2 * Math.PI * 52;
+  const cumpleLen = total ? (cumple / total) * C : 0;
+  const noCumpleLen = total ? (noCumple / total) * C : 0;
+  const noAplicaLen = total ? (noAplica / total) * C : 0;
+  return `
+    <svg width="128" height="128" viewBox="0 0 128 128">
+      <g transform="rotate(-90 64 64)">
+        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--line)" stroke-width="20"/>
+        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-cumple)" stroke-width="20"
+          stroke-dasharray="${cumpleLen} ${C - cumpleLen}" stroke-dashoffset="0"/>
+        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-no-cumple)" stroke-width="20"
+          stroke-dasharray="${noCumpleLen} ${C - noCumpleLen}" stroke-dashoffset="${-cumpleLen}"/>
+        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-no-aplica)" stroke-width="20"
+          stroke-dasharray="${noAplicaLen} ${C - noAplicaLen}" stroke-dashoffset="${-(cumpleLen + noCumpleLen)}"/>
+      </g>
+    </svg>
+  `;
+}
+
 async function renderDashboard(app){
   window.scrollTo(0,0);
   app.innerHTML = `
@@ -859,14 +882,28 @@ async function renderDashboard(app){
         </div>
       </div>
     </header>
-    <main id="dashBody">
-      <div class="empty-state">Cargando estadísticas…</div>
+    <main>
+      <div class="dash-filter-row">
+        <select class="dash-range-select" id="dashRangeSelect" onchange="loadDashboardData(this.value)">
+          <option value="all">Todo el historial</option>
+          <option value="7d">Últimos 7 días</option>
+          <option value="today">Hoy</option>
+        </select>
+        <span class="dash-range-meta" id="dashRangeMeta"></span>
+      </div>
+      <div id="dashBody"><div class="empty-state">Cargando estadísticas…</div></div>
     </main>
   `;
+  await loadDashboardData('all');
+}
+
+async function loadDashboardData(range){
   const body = document.getElementById('dashBody');
+  const meta = document.getElementById('dashRangeMeta');
+  body.innerHTML = `<div class="empty-state">Cargando estadísticas…</div>`;
   let data;
   try {
-    data = await apiFetch('/controles/dashboard');
+    data = await apiFetch(`/controles/dashboard?range=${encodeURIComponent(range)}`);
   } catch (e) {
     body.innerHTML = `<div class="empty-state">No se pudo cargar el dashboard.<br>${esc(e.message || '')}</div>`;
     return;
@@ -878,22 +915,33 @@ async function renderDashboard(app){
   const noAplica = totalesMap.no_aplica || 0;
   const total = cumple + noCumple + noAplica;
   const pctCumple = total ? Math.round((cumple / total) * 100) : 0;
+  const pctNoCumple = total ? Math.round((noCumple / total) * 100) : 0;
+  const pctNoAplica = total ? Math.round((noAplica / total) * 100) : 0;
 
+  if (meta) {
+    if (data.rango && data.rango.primera) {
+      const desde = new Date(data.rango.primera).toLocaleDateString('es-CL', { day:'2-digit', month:'short' });
+      const hasta = new Date(data.rango.ultima).toLocaleDateString('es-CL', { day:'2-digit', month:'short' });
+      meta.textContent = `${DASH_RANGE_LABELS[range]} · ${desde === hasta ? desde : desde + ' – ' + hasta}`;
+    } else {
+      meta.textContent = DASH_RANGE_LABELS[range];
+    }
+  }
+
+  const maxCatVal = Math.max(1, ...(data.porCategoria || []).flatMap(c => [c.cumple, c.no_cumple]));
   const catRows = (data.porCategoria || []).map(c => {
-    const t = c.total || 1;
-    const pc = (c.cumple / t * 100).toFixed(1);
-    const pn = (c.no_cumple / t * 100).toFixed(1);
-    const pa = (c.no_aplica / t * 100).toFixed(1);
+    const wc = (c.cumple / maxCatVal * 100).toFixed(1);
+    const wn = (c.no_cumple / maxCatVal * 100).toFixed(1);
     return `
-      <div class="stat-row">
-        <div class="stat-row-top">
-          <div class="stat-row-title">${esc(c.cat_label)}</div>
-          <div class="stat-row-total">${c.total} marcas</div>
+      <div class="chart-row">
+        <div class="chart-row-title">${esc(c.cat_label)} <span class="dash-range-meta">· ${c.total} marcas${c.no_aplica ? ' · ' + c.no_aplica + ' no aplica' : ''}</span></div>
+        <div class="chart-bar-line">
+          <div class="chart-bar-label">Cumple</div>
+          <div class="chart-bar-track"><div class="chart-bar-fill cumple" style="width:${wc}%"><span class="chart-bar-count">${c.cumple || ''}</span></div></div>
         </div>
-        <div class="stat-bar-track">
-          <div class="stat-bar-seg cumple" style="width:${pc}%"></div>
-          <div class="stat-bar-seg no_cumple" style="width:${pn}%"></div>
-          <div class="stat-bar-seg no_aplica" style="width:${pa}%"></div>
+        <div class="chart-bar-line">
+          <div class="chart-bar-label">No cumple</div>
+          <div class="chart-bar-track"><div class="chart-bar-fill no_cumple" style="width:${wn}%"><span class="chart-bar-count">${c.no_cumple || ''}</span></div></div>
         </div>
       </div>
     `;
@@ -907,31 +955,60 @@ async function renderDashboard(app){
           <div class="user-row-name">${esc(u.username)}</div>
           <div class="user-row-meta">Última marca: ${when}</div>
         </div>
-        <div class="user-row-meta">${u.cumple} cumple · ${u.no_cumple} no cumple · ${u.total} total</div>
+        <div class="user-row-stats">
+          <span class="user-pill cumple">${u.cumple} cumple</span>
+          <span class="user-pill no_cumple">${u.no_cumple} no cumple</span>
+        </div>
       </div>
     `;
   }).join('');
 
-  body.innerHTML = `
-    <div class="kpi-row">
-      <div class="kpi-card">
-        <div class="kpi-value">${total}</div>
-        <div class="kpi-label">CONTROLES MARCADOS</div>
+  const logRows = (data.ultimos || []).map(m => {
+    const when = new Date(m.checked_at).toLocaleString('es-CL', { dateStyle: 'short', timeStyle: 'short' });
+    const labelMap = { cumple: 'Cumple', no_cumple: 'No cumple', no_aplica: 'No aplica' };
+    return `
+      <div class="log-row">
+        <div class="log-row-main">
+          <div class="log-row-riesgo">${esc(m.riesgo)}</div>
+          <div class="log-row-meta">${esc(m.username)} · ${esc(m.cat_label)} · ${when}</div>
+        </div>
+        <span class="log-badge ${m.estado}">${labelMap[m.estado] || m.estado}</span>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-value" style="color:var(--risk-tolerable)">${pctCumple}%</div>
-        <div class="kpi-label">% CUMPLE</div>
+    `;
+  }).join('');
+
+  document.getElementById('dashBody').innerHTML = `
+    <div class="dash-donut-card">
+      <div class="dash-donut-wrap">
+        ${buildDonutSVG(cumple, noCumple, noAplica)}
+        <div class="dash-donut-center">
+          <div class="dash-donut-total">${total}</div>
+          <div class="dash-donut-sub">CONTROLES</div>
+        </div>
       </div>
-    </div>
-    <div class="stat-legend" style="margin-bottom:6px;">
-      <span><i style="background:var(--risk-tolerable)"></i>Cumple</span>
-      <span><i style="background:var(--risk-intolerable)"></i>No cumple</span>
-      <span><i style="background:var(--ink-faint)"></i>No aplica</span>
+      <div class="dash-legend-list">
+        <div class="dash-legend-row">
+          <span class="dash-legend-key"><span class="dash-legend-dot" style="background:var(--dash-cumple)"></span>Cumple</span>
+          <span class="dash-legend-val" style="color:var(--dash-cumple)">${cumple} · ${pctCumple}%</span>
+        </div>
+        <div class="dash-legend-row">
+          <span class="dash-legend-key"><span class="dash-legend-dot" style="background:var(--dash-no-cumple)"></span>No cumple</span>
+          <span class="dash-legend-val" style="color:var(--dash-no-cumple)">${noCumple} · ${pctNoCumple}%</span>
+        </div>
+        <div class="dash-legend-row">
+          <span class="dash-legend-key"><span class="dash-legend-dot" style="background:var(--dash-no-aplica)"></span>No aplica</span>
+          <span class="dash-legend-val" style="color:var(--dash-no-aplica)">${noAplica} · ${pctNoAplica}%</span>
+        </div>
+      </div>
     </div>
     <div class="dash-section-title">POR CATEGORÍA</div>
-    ${catRows || '<div class="empty-state">Todavía no hay controles marcados.</div>'}
+    ${catRows || '<div class="empty-state">Sin controles marcados en este período.</div>'}
+    <div class="dash-section-title">ÚLTIMOS MOVIMIENTOS</div>
+    <div class="dash-donut-card">
+      ${logRows || '<div class="empty-state">Sin movimientos en este período.</div>'}
+    </div>
     <div class="dash-section-title">POR INSPECTOR</div>
-    ${userRows || '<div class="empty-state">Todavía no hay controles marcados.</div>'}
+    ${userRows || '<div class="empty-state">Sin controles marcados en este período.</div>'}
   `;
 }
 

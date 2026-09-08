@@ -225,9 +225,18 @@ app.get('/controles/export.csv', requireAuth, async (req, res) => {
 // Devuelve estadísticas agregadas de cumplimiento, para el dashboard general.
 app.get('/controles/dashboard', requireAuth, async (req, res) => {
   try {
+    const range = ['today', '7d', 'all'].includes(req.query.range) ? req.query.range : 'all';
+    let whereClause = '';
+    if (range === 'today') {
+      whereClause = `WHERE checked_at >= (date_trunc('day', now() AT TIME ZONE 'America/Santiago') AT TIME ZONE 'America/Santiago')`;
+    } else if (range === '7d') {
+      whereClause = `WHERE checked_at >= now() - interval '7 days'`;
+    }
+
     const totales = await pool.query(
       `SELECT estado, COUNT(*)::int AS total
        FROM controles_log
+       ${whereClause}
        GROUP BY estado`
     );
     const porCategoria = await pool.query(
@@ -237,6 +246,7 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
               COUNT(*) FILTER (WHERE estado = 'no_aplica')::int AS no_aplica,
               COUNT(*)::int AS total
        FROM controles_log
+       ${whereClause}
        GROUP BY cat_label
        ORDER BY total DESC`
     );
@@ -247,28 +257,31 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
               COUNT(*)::int AS total,
               MAX(checked_at) AS ultima_marca
        FROM controles_log
+       ${whereClause}
        GROUP BY username
        ORDER BY total DESC`
+    );
+    const rango = await pool.query(
+      `SELECT MIN(checked_at) AS primera, MAX(checked_at) AS ultima
+       FROM controles_log
+       ${whereClause}`
+    );
+    const ultimos = await pool.query(
+      `SELECT username, cat_label, riesgo, estado, checked_at
+       FROM controles_log
+       ${whereClause}
+       ORDER BY checked_at DESC
+       LIMIT 8`
     );
     return res.json({
       totales: totales.rows,
       porCategoria: porCategoria.rows,
       porUsuario: porUsuario.rows,
+      rango: rango.rows[0],
+      ultimos: ultimos.rows,
     });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ error: 'Error del servidor al calcular el dashboard.' });
   }
 });
-
-const PORT = process.env.PORT || 3000;
-initSchema()
-  .then(() => {
-    app.listen(PORT, () => {
-      console.log(`miper-server escuchando en puerto ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('No se pudo preparar la base de datos:', err);
-    process.exit(1);
-  });

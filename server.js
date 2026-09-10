@@ -257,14 +257,14 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
       params
     );
     const porCategoria = await pool.query(
-      `SELECT cat_label,
+      `SELECT cat_label, proyecto_label,
               COUNT(*) FILTER (WHERE estado = 'cumple')::int AS cumple,
               COUNT(*) FILTER (WHERE estado = 'no_cumple')::int AS no_cumple,
               COUNT(*) FILTER (WHERE estado = 'no_aplica')::int AS no_aplica,
               COUNT(*)::int AS total
        FROM controles_log
        ${whereClause}
-       GROUP BY cat_label
+       GROUP BY cat_label, proyecto_label
        ORDER BY total DESC`,
       params
     );
@@ -280,6 +280,18 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
        ORDER BY total DESC`,
       params
     );
+    const porProyecto = await pool.query(
+      `SELECT COALESCE(proyecto_label, 'Sin proyecto') AS proyecto_label,
+              COUNT(*) FILTER (WHERE estado = 'cumple')::int AS cumple,
+              COUNT(*) FILTER (WHERE estado = 'no_cumple')::int AS no_cumple,
+              COUNT(*) FILTER (WHERE estado = 'no_aplica')::int AS no_aplica,
+              COUNT(*)::int AS total
+       FROM controles_log
+       ${whereClause}
+       GROUP BY proyecto_label
+       ORDER BY total DESC`,
+      params
+    );
     const rango = await pool.query(
       `SELECT MIN(checked_at) AS primera, MAX(checked_at) AS ultima
        FROM controles_log
@@ -287,7 +299,7 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
       params
     );
     const ultimos = await pool.query(
-      `SELECT username, cat_label, riesgo, estado, checked_at
+      `SELECT username, proyecto_label, cat_label, riesgo, estado, checked_at
        FROM controles_log
        ${whereClause}
        ORDER BY checked_at DESC
@@ -297,6 +309,7 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
     return res.json({
       totales: totales.rows,
       porCategoria: porCategoria.rows,
+      porProyecto: porProyecto.rows,
       porUsuario: porUsuario.rows,
       rango: rango.rows[0],
       ultimos: ultimos.rows,

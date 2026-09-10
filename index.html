@@ -919,21 +919,25 @@ function render(){
 
 const DASH_RANGE_LABELS = { today: 'Hoy', '7d': 'Últimos 7 días', all: 'Todo el historial' };
 
-function buildDonutSVG(cumple, noCumple, noAplica){
+function buildDonutSVG(cumple, noCumple, noAplica, size){
+  size = size || 128;
+  const r = size * 0.40625;   // mantiene la misma proporción que 52/128
+  const sw = size * 0.15625;  // mantiene la misma proporción que 20/128
+  const c = size / 2;
   const total = cumple + noCumple + noAplica;
-  const C = 2 * Math.PI * 52;
+  const C = 2 * Math.PI * r;
   const cumpleLen = total ? (cumple / total) * C : 0;
   const noCumpleLen = total ? (noCumple / total) * C : 0;
   const noAplicaLen = total ? (noAplica / total) * C : 0;
   return `
-    <svg width="128" height="128" viewBox="0 0 128 128">
-      <g transform="rotate(-90 64 64)">
-        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--line)" stroke-width="20"/>
-        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-cumple)" stroke-width="20"
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
+      <g transform="rotate(-90 ${c} ${c})">
+        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${sw}"/>
+        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--dash-cumple)" stroke-width="${sw}"
           stroke-dasharray="${cumpleLen} ${C - cumpleLen}" stroke-dashoffset="0"/>
-        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-no-cumple)" stroke-width="20"
+        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--dash-no-cumple)" stroke-width="${sw}"
           stroke-dasharray="${noCumpleLen} ${C - noCumpleLen}" stroke-dashoffset="${-cumpleLen}"/>
-        <circle cx="64" cy="64" r="52" fill="none" stroke="var(--dash-no-aplica)" stroke-width="20"
+        <circle cx="${c}" cy="${c}" r="${r}" fill="none" stroke="var(--dash-no-aplica)" stroke-width="${sw}"
           stroke-dasharray="${noAplicaLen} ${C - noAplicaLen}" stroke-dashoffset="${-(cumpleLen + noCumpleLen)}"/>
       </g>
     </svg>
@@ -1019,13 +1023,31 @@ async function loadDashboardData(range, proyecto){
     }
   }
 
+  const porProyecto = (data.porProyecto || []).filter(p => p.total > 0);
+  const projDonutsHTML = (proyecto === 'all' && porProyecto.length > 1) ? `
+    <div class="dash-section-title">POR PROYECTO</div>
+    <div class="dash-donut-card" style="display:flex; flex-wrap:wrap; justify-content:center; gap:20px;">
+      ${porProyecto.map(p => `
+        <div style="text-align:center; width:110px;">
+          <div class="dash-donut-wrap" style="width:88px; height:88px; margin:0 auto 8px;">
+            ${buildDonutSVG(p.cumple, p.no_cumple, p.no_aplica, 88)}
+            <div class="dash-donut-center">
+              <div class="dash-donut-total" style="font-size:17px;">${p.total}</div>
+            </div>
+          </div>
+          <div class="dash-range-meta" style="font-weight:600;">${esc(p.proyecto_label)}</div>
+        </div>
+      `).join('')}
+    </div>
+  ` : '';
+
   const maxCatVal = Math.max(1, ...(data.porCategoria || []).flatMap(c => [c.cumple, c.no_cumple]));
   const catRows = (data.porCategoria || []).map(c => {
     const wc = (c.cumple / maxCatVal * 100).toFixed(1);
     const wn = (c.no_cumple / maxCatVal * 100).toFixed(1);
     return `
       <div class="chart-row">
-        <div class="chart-row-title">${esc(c.cat_label)} <span class="dash-range-meta">· ${c.total} marcas${c.no_aplica ? ' · ' + c.no_aplica + ' no aplica' : ''}</span></div>
+        <div class="chart-row-title">${esc(c.cat_label)}${c.proyecto_label ? ` <span class="dash-range-meta">(${esc(c.proyecto_label)})</span>` : ''} <span class="dash-range-meta">· ${c.total} marcas${c.no_aplica ? ' · ' + c.no_aplica + ' no aplica' : ''}</span></div>
         <div class="chart-bar-line">
           <div class="chart-bar-label">Cumple</div>
           <div class="chart-bar-track"><div class="chart-bar-fill cumple" style="width:${wc}%"><span class="chart-bar-count">${c.cumple || ''}</span></div></div>
@@ -1061,7 +1083,7 @@ async function loadDashboardData(range, proyecto){
       <div class="log-row">
         <div class="log-row-main">
           <div class="log-row-riesgo">${esc(m.riesgo)}</div>
-          <div class="log-row-meta">${esc(m.username)} · ${esc(m.cat_label)} · ${when}</div>
+          <div class="log-row-meta">${esc(m.username)} · ${m.proyecto_label ? esc(m.proyecto_label) + ' · ' : ''}${esc(m.cat_label)} · ${when}</div>
         </div>
         <span class="log-badge ${m.estado}">${labelMap[m.estado] || m.estado}</span>
       </div>
@@ -1092,6 +1114,7 @@ async function loadDashboardData(range, proyecto){
         </div>
       </div>
     </div>
+    ${projDonutsHTML}
     <div class="dash-section-title">POR CATEGORÍA</div>
     ${catRows || '<div class="empty-state">Sin controles marcados en este período.</div>'}
     <div class="dash-section-title">ÚLTIMOS MOVIMIENTOS</div>

@@ -863,6 +863,13 @@ DATA.forEach((cat, ci)=>{
   });
 });
 
+// Fecha/revisión de la última actualización de cada MIPER, para el aviso "Última
+// actualización" que se muestra en la lista de categorías de cada proyecto.
+const PROYECTO_META = {
+  'nave-4-4': { updated: '17 abr 2026', rev: 'Rev. 05' },
+  'red-incendio': { updated: '04 dic 2026', rev: null },
+};
+
 const CRITICAL_TASKS = [
   {label:'Conducción y manejo de vehículos/maquinaria', terms:['atropello','colision','volcamiento','choque','conductor','vehicular','maquinaria','equipo rodante']},
   {label:'Maniobras de izaje', terms:['izaje','grua','camion pluma','estrobado','carga suspendida','estrobo']},
@@ -1147,7 +1154,7 @@ function renderProjects(app){
       ${userBarHTML()}
       <div class="home-hero">
         <div class="home-kicker">MATRIZ DE IDENTIFICACIÓN DE PELIGROS Y EVALUACIÓN DE RIESGOS</div>
-        <h1 class="home-title">Elegí el<br>proyecto</h1>
+        <h1 class="home-title">Elije el proyecto</h1>
         <p class="home-sub">Cada proyecto tiene su propio MIPER: categorías, tareas y riesgos independientes entre sí.</p>
         <div class="home-meta">
           <span><b>${PROYECTOS.length}</b> proyectos</span>
@@ -1184,6 +1191,10 @@ function renderCategorias(app, projId){
   const totalTasks = cats.reduce((s,c)=>s+c.tasks.length,0);
   const totalRisks = cats.reduce((s,c)=>s+countRisks(c),0);
   const projIndex = INDEX.filter(e => e.proyecto === projId);
+  const meta = PROYECTO_META[projId];
+  const updateBoxHTML = meta ? `
+    <div class="update-box">📄 <span>Última actualización del MIPER: <b>${esc(meta.updated)}</b>${meta.rev ? ' · ' + esc(meta.rev) : ''}</span></div>
+  ` : '';
   app.innerHTML = `
     <div class="stripe"></div>
     <header class="topbar">
@@ -1191,7 +1202,7 @@ function renderCategorias(app, projId){
         <div class="back-btn" onclick="go('#/')">‹</div>
         <div class="topbar-titles">
           <div class="topbar-eyebrow">MIPER · ${esc(projLabel.toUpperCase())}</div>
-          <div class="topbar-title">Elegí el frente de trabajo</div>
+          <div class="topbar-title">Elije el frente de trabajo</div>
         </div>
       </div>
     </header>
@@ -1203,6 +1214,7 @@ function renderCategorias(app, projId){
           <span><b>${totalTasks}</b> tareas</span>
           <span><b>${totalRisks}</b> riesgos identificados</span>
         </div>
+        ${updateBoxHTML}
       </div>
 
       <div class="search-wrap">

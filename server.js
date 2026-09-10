@@ -56,6 +56,13 @@ async function initSchema(){
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_controles_task ON controles_log (cat_id, task_idx);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_controles_control_cell ON controles_log (cat_id, task_idx, riesgo_idx, checked_at DESC);`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_controles_username ON controles_log (username);`);
+  // Columnas agregadas después del lanzamiento inicial (para distinguir Nave 4/4 de
+  // Red de Incendio, y de cualquier proyecto nuevo que se sume más adelante).
+  // ADD COLUMN IF NOT EXISTS es seguro de correr siempre: si la columna ya existe,
+  // no hace nada; si no existe, la crea sola — sin tocar el editor SQL de Neon.
+  await pool.query(`ALTER TABLE controles_log ADD COLUMN IF NOT EXISTS proyecto TEXT;`);
+  await pool.query(`ALTER TABLE controles_log ADD COLUMN IF NOT EXISTS proyecto_label TEXT;`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_controles_proyecto ON controles_log (proyecto);`);
   console.log('Esquema verificado/creado correctamente.');
 }
 
@@ -141,6 +148,7 @@ app.post('/controles', requireAuth, async (req, res) => {
     const {
       catId, catLabel, taskIdx, tarea,
       riesgoIdx, riesgo, factorIdx, factor, estado,
+      proyecto, proyectoLabel,
     } = req.body;
 
     if (!['no_aplica', 'cumple', 'no_cumple'].includes(estado)) {
@@ -149,10 +157,10 @@ app.post('/controles', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO controles_log
-        (username, cat_id, cat_label, task_idx, tarea, riesgo_idx, riesgo, factor_idx, factor, estado)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        (username, cat_id, cat_label, task_idx, tarea, riesgo_idx, riesgo, factor_idx, factor, estado, proyecto, proyecto_label)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING id, checked_at`,
-      [req.user.username, catId, catLabel, taskIdx, tarea, riesgoIdx, riesgo, factorIdx, factor || null, estado]
+      [req.user.username, catId, catLabel, taskIdx, tarea, riesgoIdx, riesgo, factorIdx, factor || null, estado, proyecto || null, proyectoLabel || null]
     );
     return res.status(201).json({ ok: true, id: result.rows[0].id, checked_at: result.rows[0].checked_at });
   } catch (e) {
@@ -205,13 +213,13 @@ function toChileString(date) {
 app.get('/controles/export.csv', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT username, cat_label, tarea, riesgo, factor, estado, checked_at
+      `SELECT username, proyecto_label, cat_label, tarea, riesgo, factor, estado, checked_at
        FROM controles_log
        ORDER BY checked_at DESC`
     );
-    const header = 'usuario,categoria,tarea,riesgo,factor,estado,fecha_chile\n';
+    const header = 'usuario,proyecto,categoria,tarea,riesgo,factor,estado,fecha_chile\n';
     const rows = result.rows.map(r => [
-      r.username, r.cat_label, r.tarea, r.riesgo, r.factor || '', r.estado, toChileString(r.checked_at),
+      r.username, r.proyecto_label || '', r.cat_label, r.tarea, r.riesgo, r.factor || '', r.estado, toChileString(r.checked_at),
     ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="miper_controles.csv"');
@@ -226,18 +234,27 @@ app.get('/controles/export.csv', requireAuth, async (req, res) => {
 app.get('/controles/dashboard', requireAuth, async (req, res) => {
   try {
     const range = ['today', '7d', 'all'].includes(req.query.range) ? req.query.range : 'all';
-    let whereClause = '';
+    const proyecto = (req.query.proyecto || 'all').toString();
+
+    const conditions = [];
+    const params = [];
     if (range === 'today') {
-      whereClause = `WHERE checked_at >= (date_trunc('day', now() AT TIME ZONE 'America/Santiago') AT TIME ZONE 'America/Santiago')`;
+      conditions.push(`checked_at >= (date_trunc('day', now() AT TIME ZONE 'America/Santiago') AT TIME ZONE 'America/Santiago')`);
     } else if (range === '7d') {
-      whereClause = `WHERE checked_at >= now() - interval '7 days'`;
+      conditions.push(`checked_at >= now() - interval '7 days'`);
     }
+    if (proyecto !== 'all') {
+      params.push(proyecto);
+      conditions.push(`proyecto = $${params.length}`);
+    }
+    const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const totales = await pool.query(
       `SELECT estado, COUNT(*)::int AS total
        FROM controles_log
        ${whereClause}
-       GROUP BY estado`
+       GROUP BY estado`,
+      params
     );
     const porCategoria = await pool.query(
       `SELECT cat_label,
@@ -248,7 +265,8 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
        FROM controles_log
        ${whereClause}
        GROUP BY cat_label
-       ORDER BY total DESC`
+       ORDER BY total DESC`,
+      params
     );
     const porUsuario = await pool.query(
       `SELECT username,
@@ -259,19 +277,22 @@ app.get('/controles/dashboard', requireAuth, async (req, res) => {
        FROM controles_log
        ${whereClause}
        GROUP BY username
-       ORDER BY total DESC`
+       ORDER BY total DESC`,
+      params
     );
     const rango = await pool.query(
       `SELECT MIN(checked_at) AS primera, MAX(checked_at) AS ultima
        FROM controles_log
-       ${whereClause}`
+       ${whereClause}`,
+      params
     );
     const ultimos = await pool.query(
       `SELECT username, cat_label, riesgo, estado, checked_at
        FROM controles_log
        ${whereClause}
        ORDER BY checked_at DESC
-       LIMIT 8`
+       LIMIT 8`,
+      params
     );
     return res.json({
       totales: totales.rows,

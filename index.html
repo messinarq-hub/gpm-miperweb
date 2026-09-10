@@ -942,20 +942,29 @@ function buildDonutSVG(cumple, noCumple, noAplica){
 
 async function renderDashboard(app){
   window.scrollTo(0,0);
+  const projMap = {};
+  DATA.forEach(c=>{
+    if(!projMap[c.proyecto]) projMap[c.proyecto] = { id:c.proyecto, label:c.proyectoLabel || c.proyecto };
+  });
+  const PROYECTOS = Object.values(projMap);
   app.innerHTML = `
     <div class="stripe"></div>
     <header class="topbar">
       <div class="topbar-inner">
         <div class="back-btn" onclick="go('#/')">‹</div>
         <div class="topbar-titles">
-          <div class="topbar-eyebrow">MIPER · TODOS LOS PROYECTOS</div>
+          <div class="topbar-eyebrow" id="dashEyebrow">MIPER · TODOS LOS PROYECTOS</div>
           <div class="topbar-title">Dashboard de controles</div>
         </div>
       </div>
     </header>
     <main>
       <div class="dash-filter-row">
-        <select class="dash-range-select" id="dashRangeSelect" onchange="loadDashboardData(this.value)">
+        <select class="dash-range-select" id="dashProjectSelect" onchange="onDashFiltersChange()">
+          <option value="all">Todos los proyectos</option>
+          ${PROYECTOS.map(p=>`<option value="${esc(p.id)}">${esc(p.label)}</option>`).join('')}
+        </select>
+        <select class="dash-range-select" id="dashRangeSelect" onchange="onDashFiltersChange()">
           <option value="all">Todo el historial</option>
           <option value="7d">Últimos 7 días</option>
           <option value="today">Hoy</option>
@@ -965,16 +974,27 @@ async function renderDashboard(app){
       <div id="dashBody"><div class="empty-state">Cargando estadísticas…</div></div>
     </main>
   `;
-  await loadDashboardData('all');
+  await loadDashboardData('all', 'all');
 }
 
-async function loadDashboardData(range){
+function onDashFiltersChange(){
+  const range = document.getElementById('dashRangeSelect').value;
+  const proyecto = document.getElementById('dashProjectSelect').value;
+  const projSelect = document.getElementById('dashProjectSelect');
+  const label = projSelect.options[projSelect.selectedIndex].textContent;
+  const eyebrow = document.getElementById('dashEyebrow');
+  if (eyebrow) eyebrow.textContent = 'MIPER · ' + label.toUpperCase();
+  loadDashboardData(range, proyecto);
+}
+
+async function loadDashboardData(range, proyecto){
+  proyecto = proyecto || 'all';
   const body = document.getElementById('dashBody');
   const meta = document.getElementById('dashRangeMeta');
   body.innerHTML = `<div class="empty-state">Cargando estadísticas…</div>`;
   let data;
   try {
-    data = await apiFetch(`/controles/dashboard?range=${encodeURIComponent(range)}`);
+    data = await apiFetch(`/controles/dashboard?range=${encodeURIComponent(range)}&proyecto=${encodeURIComponent(proyecto)}`);
   } catch (e) {
     body.innerHTML = `<div class="empty-state">No se pudo cargar el dashboard.<br>${esc(e.message || '')}</div>`;
     return;
@@ -1497,6 +1517,7 @@ function renderControlGroup(catId, taskIdx, riesgoIdx, riesgo){
     tarea: task ? task.tarea : '',
     riesgoIdx, riesgo: riesgo.riesgo || '',
     factorIdx: null, factor: null,
+    proyecto: cat ? cat.proyecto : '', proyectoLabel: cat ? cat.proyectoLabel : '',
   };
   const payloadAttr = esc(JSON.stringify(payload));
   return `
